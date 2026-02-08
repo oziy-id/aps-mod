@@ -92,9 +92,18 @@
                                     <div class="font-bold text-slate-700 truncate max-w-[150px]">{{ app.title }}</div>
                                     <div class="text-[10px] text-slate-400 break-all">{{ app.uploader_email }}</div>
                                 </td>
-                                <td class="px-4 py-4 text-slate-500 text-xs">{{ app.size }}</td>
+                                <td class="px-4 py-4 text-slate-500 text-xs">
+                                    <div class="font-bold">{{ app.version }}</div>
+                                    <div class="text-[10px] text-slate-400">{{ app.size }}</div>
+                                </td>
                                 <td class="px-4 py-4 text-right">
-                                    <a href="/admin/delete/{{ app.id }}" onclick="return confirm('Hapus?')" class="text-red-500 font-bold text-[10px] bg-red-50 px-3 py-1.5 rounded uppercase">Delete App</a>
+                                    <div class="flex justify-end gap-2">
+                                        <button type="button" onclick="updateLink('{{ app.id }}', '{{ app.file_path }}', '{{ app.version }}')" class="text-blue-500 font-bold text-[10px] bg-blue-50 px-3 py-1.5 rounded uppercase hover:bg-blue-100 transition border border-blue-100">
+                                            Update
+                                        </button>
+
+                                        <a href="/admin/delete/{{ app.id }}" onclick="return confirm('Hapus?')" class="text-red-500 font-bold text-[10px] bg-red-50 px-3 py-1.5 rounded uppercase hover:bg-red-100 transition border border-red-100">Delete</a>
+                                    </div>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -147,16 +156,49 @@
 </div>
 
 <script>
+// Fungsi Animasi Loading (Existing)
 function showLoading(form) {
     const btn = document.getElementById('btn-publish');
     const text = document.getElementById('btn-text');
     const loader = document.getElementById('btn-loader');
 
-    // Ubah tampilan tombol
     text.innerText = "Publishing...";
     loader.classList.remove('hidden');
-    btn.disabled = true; // Matikan tombol agar tidak bisa diklik 2x
-    btn.classList.add('opacity-75', 'cursor-not-allowed'); // Efek visual disabled
+    btn.disabled = true; 
+    btn.classList.add('opacity-75', 'cursor-not-allowed');
+}
+
+// Fungsi Baru: Update Link & Versi (LOGIKA UPDATE)
+function updateLink(appId, currentUrl, currentVersion) {
+    // 1. Minta Link Baru
+    let newUrl = prompt("Masukkan Link Download (Safelinku) Baru:", currentUrl);
+    
+    if (newUrl != null && newUrl.trim() !== "") {
+        // 2. Jika Link diisi, Minta Versi Baru
+        let newVersion = prompt("Masukkan Versi Baru (Contoh: v1.5):", currentVersion);
+
+        if (newVersion != null && newVersion.trim() !== "") {
+            // 3. Kirim keduanya ke server via Form Rahasia
+            let form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/admin/update_link/' + appId;
+
+            let inputUrl = document.createElement('input');
+            inputUrl.type = 'hidden';
+            inputUrl.name = 'new_url';
+            inputUrl.value = newUrl;
+
+            let inputVer = document.createElement('input');
+            inputVer.type = 'hidden';
+            inputVer.name = 'new_version';
+            inputVer.value = newVersion;
+
+            form.appendChild(inputUrl);
+            form.appendChild(inputVer);
+            document.body.appendChild(form);
+            form.submit(); 
+        }
+    }
 }
 </script>
 {% endblock %}
