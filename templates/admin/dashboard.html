@@ -93,12 +93,12 @@
                                     <div class="text-[10px] text-slate-400 break-all">{{ app.uploader_email }}</div>
                                 </td>
                                 <td class="px-4 py-4 text-slate-500 text-xs">
-                                    <div class="font-bold">{{ app.version }}</div>
+                                    <div class="font-bold">{{ app.version or '-' }}</div>
                                     <div class="text-[10px] text-slate-400">{{ app.size }}</div>
                                 </td>
                                 <td class="px-4 py-4 text-right">
                                     <div class="flex justify-end gap-2">
-                                        <button type="button" onclick="updateLink('{{ app.id }}', '{{ app.file_path }}', '{{ app.version }}')" class="text-blue-500 font-bold text-[10px] bg-blue-50 px-3 py-1.5 rounded uppercase hover:bg-blue-100 transition border border-blue-100">
+                                        <button type="button" onclick="updateLink('{{ app.id }}', '{{ app.file_path or '' }}', '{{ app.version or '' }}')" class="text-blue-500 font-bold text-[10px] bg-blue-50 px-3 py-1.5 rounded uppercase hover:bg-blue-100 transition border border-blue-100">
                                             Update
                                         </button>
 
@@ -156,7 +156,7 @@
 </div>
 
 <script>
-// Fungsi Animasi Loading (Existing)
+// Fungsi Animasi Loading
 function showLoading(form) {
     const btn = document.getElementById('btn-publish');
     const text = document.getElementById('btn-text');
