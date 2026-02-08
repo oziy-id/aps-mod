@@ -3,30 +3,49 @@ import functools
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from flask import Flask, render_template, request, redirect, url_for, flash, session, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, session
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+from supabase import create_client, Client
+
+# Load environment variables
+load_dotenv()
 
 # --- CONFIGURATION ---
 class Config:
-    SECRET_KEY = 'kunci-rahasia-ozi-ganti-ini-biar-aman'
+    SECRET_KEY = os.environ.get('SECRET_KEY', 'kunci-rahasia-default')
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///' + os.path.join(BASE_DIR, 'apsmod.db')
+    
+    # Database Config
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
+    if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith("postgres://"):
+        SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace("postgres://", "postgresql://", 1)
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static/uploads')
+    
+    # Upload Settings (Hanya untuk validasi ekstensi, penyimpanan fisik pindah ke Supabase)
     ALLOWED_EXTENSIONS = {'apk', 'xapk', 'zip'}
     
+    # Email Config
     MAIL_SERVER = 'smtp.gmail.com'
     MAIL_PORT = 587
-    MAIL_USERNAME = 'oziyy77@gmail.com'
-    MAIL_PASSWORD = 'ixxe wvgc kxxc wqmi' 
-    MAIL_RECIPIENT = 'oziyy77@gmail.com'
+    MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
+    MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
+    MAIL_RECIPIENT = os.environ.get('MAIL_RECIPIENT')
+
+    # Supabase Config
+    SUPABASE_URL = os.environ.get("SUPABASE_URL")
+    SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+    SUPABASE_BUCKET = "uploads"  # Pastikan buat bucket bernama 'uploads' di Supabase
 
 app = Flask(__name__)
 app.config.from_object(Config)
 db = SQLAlchemy(app)
+
+# --- SUPABASE CLIENT ---
+supabase: Client = create_client(app.config['SUPABASE_URL'], app.config['SUPABASE_KEY'])
 
 # --- UTILS ---
 def get_wib_now():
@@ -37,6 +56,33 @@ def allowed_file(filename):
 
 def allowed_media(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'webp', 'pdf'}
+
+def upload_to_supabase(file, filename):
+    """Upload file object to Supabase Storage"""
+    try:
+        # Baca file content
+        file_content = file.read()
+        # Upload ke bucket (overwrite jika ada nama sama)
+        res = supabase.storage.from_(app.config['SUPABASE_BUCKET']).upload(
+            path=filename,
+            file=file_content,
+            file_options={"content-type": file.content_type, "upsert": "true"}
+        )
+        return True
+    except Exception as e:
+        print(f"Supabase Upload Error: {e}")
+        return False
+
+def get_supabase_url(filename):
+    """Get Public URL from Supabase"""
+    return supabase.storage.from_(app.config['SUPABASE_BUCKET']).get_public_url(filename)
+
+def delete_from_supabase(filename):
+    """Delete file from Supabase Storage"""
+    try:
+        supabase.storage.from_(app.config['SUPABASE_BUCKET']).remove([filename])
+    except Exception as e:
+        print(f"Supabase Delete Error: {e}")
 
 # --- EMAIL SENDER ---
 def send_contact_email(name, user_email, message):
@@ -111,7 +157,8 @@ def create_initial_data():
         owner = User(email="oziyy77@gmail.com", password_hash=hashed_pw, role='owner')
         db.session.add(owner)
     if not InviteCode.query.first():
-        db.session.add(InviteCode(code="6453"))
+        initial_code = os.environ.get('INVITE_CODE', '6453')
+        db.session.add(InviteCode(code=initial_code))
     db.session.commit()
 
 def login_required(f):
@@ -119,7 +166,6 @@ def login_required(f):
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
             return redirect(url_for('login'))
-        # MODIFIKASI: Force Logout jika akun sudah dihapus (di-kick)
         user = User.query.get(session['user_id'])
         if not user:
             session.clear()
@@ -176,9 +222,11 @@ def download_file(app_id):
     db.session.commit()
     return redirect(app_obj.file_path)
 
+# MODIFIKASI: Route ini sekarang me-redirect ke URL Supabase
+# Tujuannya agar tidak merusak kode di template yang memanggil url_for('uploaded_file', filename=...)
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    return redirect(get_supabase_url(filename))
 
 # --- AUTH ---
 @app.route('/login', methods=['GET', 'POST'])
@@ -255,9 +303,10 @@ def admin_dashboard():
             app_obj.file_path = download_url
             app_obj.size = manual_size
 
+        # MODIFIKASI: Upload Icon ke Supabase
         if icon_file and allowed_media(icon_file.filename):
             icon_filename = secure_filename(f"icon_{datetime.now().timestamp()}_{icon_file.filename}")
-            icon_file.save(os.path.join(app.config['UPLOAD_FOLDER'], icon_filename))
+            upload_to_supabase(icon_file, icon_filename) # Upload
             app_obj.icon_path = icon_filename
         
         app_obj.description = description_input
@@ -268,12 +317,17 @@ def admin_dashboard():
         app_obj.created_at = get_wib_now()
         db.session.commit()
 
+        # MODIFIKASI: Upload Screenshots ke Supabase
         if screenshot_files and screenshot_files[0].filename != '':
+            # Hapus screenshot lama dari DB dan Supabase (opsional, di sini hanya hapus DB relasi)
+            # Idealnya hapus file fisik lama juga, tapi untuk kesederhanaan kita skip penghapusan fisik lama saat replace
             AppScreenshot.query.filter_by(app_id=app_obj.id).delete()
+            
             for i, ss in enumerate(screenshot_files):
                 if ss and allowed_media(ss.filename):
                     ss_name = secure_filename(f"ss_{datetime.now().timestamp()}_{ss.filename}")
-                    ss.save(os.path.join(app.config['UPLOAD_FOLDER'], ss_name))
+                    upload_to_supabase(ss, ss_name) # Upload
+                    
                     new_ss = AppScreenshot(app_id=app_obj.id, image_path=ss_name, orientation=orientation_input)
                     db.session.add(new_ss)
                     if i == 0:
@@ -291,7 +345,6 @@ def admin_dashboard():
     current_otp = otp_obj.code if otp_obj else "Err"
     return render_template('admin/dashboard.html', apps=apps, logs=logs, partners=partners, current_otp=current_otp)
 
-# MODIFIKASI: Kick Partner otomatis memicu Force Logout karena pengecekan di login_required
 @app.route('/admin/kick_partner/<int:user_id>')
 @login_required
 def kick_partner(user_id):
@@ -319,8 +372,9 @@ def update_otp():
 def delete_app(app_id):
     app = Application.query.get_or_404(app_id)
     try:
-        if app.icon_path: os.remove(os.path.join(app.config['UPLOAD_FOLDER'], app.icon_path))
-        for ss in app.screenshots: os.remove(os.path.join(app.config['UPLOAD_FOLDER'], ss.image_path))
+        # MODIFIKASI: Hapus file dari Supabase
+        if app.icon_path: delete_from_supabase(app.icon_path)
+        for ss in app.screenshots: delete_from_supabase(ss.image_path)
     except: pass
     db.session.delete(app)
     db.session.commit()
