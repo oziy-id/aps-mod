@@ -58,7 +58,6 @@ def allowed_media(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'webp', 'pdf'}
 
 def upload_to_supabase(file, filename):
-    """Upload file object to Supabase Storage"""
     try:
         file_content = file.read()
         res = supabase.storage.from_(app.config['SUPABASE_BUCKET']).upload(
@@ -72,11 +71,9 @@ def upload_to_supabase(file, filename):
         return False
 
 def get_supabase_url(filename):
-    """Get Public URL from Supabase"""
     return supabase.storage.from_(app.config['SUPABASE_BUCKET']).get_public_url(filename)
 
 def delete_from_supabase(filename):
-    """Delete file from Supabase Storage"""
     try:
         supabase.storage.from_(app.config['SUPABASE_BUCKET']).remove([filename])
     except Exception as e:
@@ -270,10 +267,11 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# --- ADMIN DASHBOARD ---
+# --- ADMIN DASHBOARD (BAGIAN KRITIS YANG SERING ERROR) ---
 @app.route('/admin', methods=['GET', 'POST'])
 @login_required
 def admin_dashboard():
+    # --- LOGIKA POST (UPLOAD/UPDATE) ---
     if request.method == 'POST':
         download_url = request.form.get('download_url')
         manual_size = request.form.get('size', '0 MB')
@@ -332,6 +330,14 @@ def admin_dashboard():
         flash('Data dipublikasikan!', 'success')
         return redirect(url_for('admin_dashboard'))
 
+    # --- LOGIKA GET (TAMPILAN) - INI HARUS DI LUAR BLOK POST ---
+    apps = Application.query.order_by(Application.created_at.desc()).all()
+    logs = ActivityLog.query.order_by(ActivityLog.timestamp.desc()).limit(15).all()
+    partners = User.query.filter_by(role='partner').all() if session.get('role') == 'owner' else []
+    otp_obj = InviteCode.query.first()
+    current_otp = otp_obj.code if otp_obj else "Err"
+    return render_template('admin/dashboard.html', apps=apps, logs=logs, partners=partners, current_otp=current_otp)
+
 @app.route('/admin/kick_partner/<int:user_id>')
 @login_required
 def kick_partner(user_id):
@@ -354,18 +360,17 @@ def update_otp():
     db.session.commit()
     return redirect(url_for('admin_dashboard'))
 
-# --- ROUTE BARU: UPDATE LINK & VERSI (MODIFIKASI LOGIKA) ---
+# --- ROUTE UPDATE LINK & VERSI ---
 @app.route('/admin/update_link/<int:app_id>', methods=['POST'])
 @login_required
 def update_app_link(app_id):
     app_obj = Application.query.get_or_404(app_id)
     new_url = request.form.get('new_url')
-    new_version = request.form.get('new_version') # Ambil versi baru
+    new_version = request.form.get('new_version') 
 
     if new_url and new_version:
         app_obj.file_path = new_url
-        app_obj.version = new_version # Simpan versi baru
-        # Update tanggal dibuat agar muncul di paling atas (Latest)
+        app_obj.version = new_version
         app_obj.created_at = get_wib_now()
         db.session.commit()
         flash('Link & Versi berhasil diperbarui!', 'success')
