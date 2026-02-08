@@ -3,7 +3,7 @@ import functools
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_from_directory
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
@@ -25,7 +25,7 @@ class Config:
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace("postgres://", "postgresql://", 1)
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
-    # Upload Settings (Hanya untuk validasi ekstensi, penyimpanan fisik pindah ke Supabase)
+    # Upload Settings
     ALLOWED_EXTENSIONS = {'apk', 'xapk', 'zip'}
     
     # Email Config
@@ -38,7 +38,7 @@ class Config:
     # Supabase Config
     SUPABASE_URL = os.environ.get("SUPABASE_URL")
     SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-    SUPABASE_BUCKET = "uploads"  # Pastikan buat bucket bernama 'uploads' di Supabase
+    SUPABASE_BUCKET = "uploads" 
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -60,9 +60,7 @@ def allowed_media(filename):
 def upload_to_supabase(file, filename):
     """Upload file object to Supabase Storage"""
     try:
-        # Baca file content
         file_content = file.read()
-        # Upload ke bucket (overwrite jika ada nama sama)
         res = supabase.storage.from_(app.config['SUPABASE_BUCKET']).upload(
             path=filename,
             file=file_content,
@@ -186,12 +184,22 @@ def log_activity(action, app_name, details):
 def index():
     search_query = request.args.get('q')
     category_query = request.args.get('category')
+    
     query = Application.query
     if search_query: query = query.filter(Application.title.ilike(f'%{search_query}%'))
     if category_query: query = query.filter_by(category=category_query)
+    
+    # 1. Apps Terbaru (Existing)
     apps = query.order_by(Application.created_at.desc()).all()
+    
+    # 2. Apps Featured (Existing)
     featured_apps = Application.query.filter_by(is_featured=True).order_by(Application.created_at.desc()).limit(5).all()
-    return render_template('index.html', apps=apps, featured_apps=featured_apps, search_query=search_query, current_category=category_query)
+    
+    # 3. LOGIKA BARU: Apps Terpopuler (Berdasarkan jumlah Download Terbanyak)
+    # Mengambil 5 aplikasi dengan download terbanyak, diurutkan DESC (besar ke kecil)
+    popular_apps = Application.query.order_by(Application.downloads.desc()).limit(5).all()
+
+    return render_template('index.html', apps=apps, featured_apps=featured_apps, popular_apps=popular_apps, search_query=search_query, current_category=category_query)
 
 @app.route('/about')
 def about(): return render_template('about.html')
@@ -218,12 +226,11 @@ def detail(app_id):
 @app.route('/download/<int:app_id>')
 def download_file(app_id):
     app_obj = Application.query.get_or_404(app_id)
+    # LOGIKA PENTING: Menambah jumlah download setiap kali link diklik
     app_obj.downloads += 1
     db.session.commit()
     return redirect(app_obj.file_path)
 
-# MODIFIKASI: Route ini sekarang me-redirect ke URL Supabase
-# Tujuannya agar tidak merusak kode di template yang memanggil url_for('uploaded_file', filename=...)
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return redirect(get_supabase_url(filename))
@@ -303,10 +310,9 @@ def admin_dashboard():
             app_obj.file_path = download_url
             app_obj.size = manual_size
 
-        # MODIFIKASI: Upload Icon ke Supabase
         if icon_file and allowed_media(icon_file.filename):
             icon_filename = secure_filename(f"icon_{datetime.now().timestamp()}_{icon_file.filename}")
-            upload_to_supabase(icon_file, icon_filename) # Upload
+            upload_to_supabase(icon_file, icon_filename) 
             app_obj.icon_path = icon_filename
         
         app_obj.description = description_input
@@ -317,17 +323,12 @@ def admin_dashboard():
         app_obj.created_at = get_wib_now()
         db.session.commit()
 
-        # MODIFIKASI: Upload Screenshots ke Supabase
         if screenshot_files and screenshot_files[0].filename != '':
-            # Hapus screenshot lama dari DB dan Supabase (opsional, di sini hanya hapus DB relasi)
-            # Idealnya hapus file fisik lama juga, tapi untuk kesederhanaan kita skip penghapusan fisik lama saat replace
             AppScreenshot.query.filter_by(app_id=app_obj.id).delete()
-            
             for i, ss in enumerate(screenshot_files):
                 if ss and allowed_media(ss.filename):
                     ss_name = secure_filename(f"ss_{datetime.now().timestamp()}_{ss.filename}")
-                    upload_to_supabase(ss, ss_name) # Upload
-                    
+                    upload_to_supabase(ss, ss_name)
                     new_ss = AppScreenshot(app_id=app_obj.id, image_path=ss_name, orientation=orientation_input)
                     db.session.add(new_ss)
                     if i == 0:
@@ -372,7 +373,6 @@ def update_otp():
 def delete_app(app_id):
     app = Application.query.get_or_404(app_id)
     try:
-        # MODIFIKASI: Hapus file dari Supabase
         if app.icon_path: delete_from_supabase(app.icon_path)
         for ss in app.screenshots: delete_from_supabase(ss.image_path)
     except: pass
