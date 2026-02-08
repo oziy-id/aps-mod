@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login System - APSMod</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Outfit', sans-serif; }</style>
+</head>
+<body class="h-screen overflow-hidden flex">
+
+    <div class="hidden md:flex w-1/2 bg-[#0F172A] relative flex-col justify-center items-center text-white p-12 overflow-hidden">
+        <div id="canvas-container" class="absolute inset-0 z-0 opacity-40"></div>
+        <div class="relative z-10 text-center">
+            <h1 class="text-6xl font-black mb-4 tracking-tighter">APS<span class="text-green-500">Mod</span></h1>
+            <p class="text-lg text-gray-400 max-w-md mx-auto leading-relaxed">
+                Centralized Management System for Premium Applications. Secure, Fast, and Reliable.
+            </p>
+            <div class="mt-8 flex justify-center gap-4">
+                <span class="px-4 py-2 bg-white/10 rounded-full text-xs font-bold border border-white/10">Version 15.0</span>
+                <span class="px-4 py-2 bg-green-500/20 text-green-400 rounded-full text-xs font-bold border border-green-500/20">Secure Login</span>
+            </div>
+        </div>
+        <div class="absolute -bottom-24 -left-24 w-64 h-64 bg-green-500 rounded-full blur-[120px] opacity-20"></div>
+    </div>
+
+    <div class="w-full md:w-1/2 bg-white flex items-center justify-center p-8 relative">
+        <div class="w-full max-w-md">
+            
+            <div class="mb-10">
+                <h2 class="text-3xl font-bold text-slate-900 mb-2">Welcome Back!</h2>
+                <p class="text-slate-500">Enter your credentials to access the dashboard.</p>
+            </div>
+
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                    <div class="mb-6 p-4 rounded-xl flex items-center gap-3 border {{ 'bg-red-50 text-red-600 border-red-100' if category == 'error' else 'bg-green-50 text-green-600 border-green-100' }}">
+                        <span class="font-bold text-lg">{{ '!' if category == 'error' else '✓' }}</span>
+                        <span class="text-sm font-medium">{{ message }}</span>
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+
+            <form method="POST" action="/login" class="space-y-6">
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Email Address</label>
+                    <div class="relative">
+                        <input type="email" name="email" required class="w-full pl-10 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:bg-white transition font-medium text-slate-800" placeholder="admin@apsmod.com">
+                        <svg class="w-5 h-5 text-slate-400 absolute left-3.5 top-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207"/></svg>
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">Password Key</label>
+                    <div class="relative">
+                        <input type="password" name="password" id="loginPass" required class="w-full pl-10 pr-12 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:bg-white transition font-medium text-slate-800" placeholder="••••••••">
+                        
+                        <svg class="w-5 h-5 text-slate-400 absolute left-3.5 top-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                        
+                        <button type="button" onclick="togglePass('loginPass', 'eyeLogin')" class="absolute right-4 top-4 text-slate-400 hover:text-green-600 focus:outline-none">
+                            <svg id="eyeLogin" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <button type="submit" class="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-green-600 transition shadow-xl shadow-green-500/10 flex justify-center items-center gap-2 group">
+                    <span>Access Dashboard</span>
+                    <svg class="w-5 h-5 group-hover:translate-x-1 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                </button>
+            </form>
+
+            <div class="mt-8 text-center pt-8 border-t border-slate-100">
+                <p class="text-slate-500 text-sm mb-3">Want to join the team?</p>
+                <a href="/register" class="inline-flex items-center justify-center px-6 py-3 border-2 border-slate-100 rounded-xl text-sm font-bold text-slate-600 hover:border-green-500 hover:text-green-600 transition">
+                    Register as Partner
+                </a>
+            </div>
+            
+            <div class="absolute bottom-6 left-0 w-full text-center">
+                <a href="/" class="text-xs text-slate-400 hover:text-slate-600 transition">← Back to Homepage</a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // FUNGSI TOGGLE PASSWORD
+        function togglePass(inputId, iconId) {
+            const input = document.getElementById(inputId);
+            const icon = document.getElementById(iconId);
+            
+            if (input.type === "password") {
+                input.type = "text";
+                // Ganti Icon jadi Mata Dicoret (Hide)
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />';
+            } else {
+                input.type = "password";
+                // Ganti Icon jadi Mata Biasa (Show)
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />';
+            }
+        }
+
+        // 3D Three.js
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, container.clientWidth/container.clientHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        container.appendChild(renderer.domElement);
+        
+        const geometry = new THREE.IcosahedronGeometry(1, 1);
+        const material = new THREE.MeshBasicMaterial({ color: 0x22C55E, wireframe: true, transparent: true, opacity: 0.3 });
+        const sphere = new THREE.Mesh(geometry, material);
+        scene.add(sphere);
+        
+        camera.position.z = 2.5;
+        
+        const animate = () => {
+            requestAnimationFrame(animate);
+            sphere.rotation.x += 0.002;
+            sphere.rotation.y += 0.002;
+            renderer.render(scene, camera);
+        };
+        animate();
+        window.addEventListener('resize', () => {
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+        });
+    </script>
+</body>
+</html>

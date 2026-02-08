@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        /* Base Reset */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background-color: #f3f4f6; 
+            margin: 0; 
+            padding: 0; 
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        .wrapper {
+            width: 100%;
+            background-color: #f3f4f6;
+            padding: 40px 0;
+        }
+
+        /* Container Kartu (Compact & Elegan) */
+        .container { 
+            max-width: 420px; /* Ukuran lebih kecil/compact */
+            margin: 0 auto; 
+            background-color: #ffffff; 
+            border-radius: 20px; 
+            overflow: hidden; 
+            box-shadow: 0 10px 40px rgba(0,0,0,0.08); 
+        }
+
+        /* Header Gradient */
+        .header { 
+            background: linear-gradient(135deg, #16a34a 0%, #15803d 100%); 
+            padding: 30px 20px; 
+            text-align: center; 
+        }
+        
+        .header h1 { 
+            color: #ffffff; 
+            margin: 0; 
+            font-size: 18px; 
+            font-weight: 700; 
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+
+        /* Area Konten */
+        .content { 
+            padding: 30px 25px; 
+            color: #374151; 
+        }
+
+        /* Info Pengirim (Card Style) */
+        .sender-card {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        
+        .avatar {
+            width: 50px;
+            height: 50px;
+            background-color: #dcfce7;
+            color: #166534;
+            font-size: 20px;
+            font-weight: bold;
+            line-height: 50px;
+            border-radius: 50%;
+            margin: 0 auto 10px;
+            display: block;
+        }
+
+        .sender-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: #111827;
+            display: block;
+        }
+
+        .sender-email {
+            font-size: 13px;
+            color: #6b7280;
+            text-decoration: none;
+        }
+
+        /* Kotak Pesan */
+        .message-label {
+            font-size: 11px;
+            font-weight: 800;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .message-box { 
+            background-color: #f9fafb; 
+            padding: 20px; 
+            border-radius: 12px; 
+            font-size: 14px; 
+            line-height: 1.6; 
+            color: #374151; 
+            border: 1px solid #e5e7eb;
+            font-style: italic;
+        }
+
+        /* Tombol Balas */
+        .btn-container {
+            text-align: center;
+            margin-top: 30px;
+        }
+
+        .btn { 
+            display: inline-block; 
+            background-color: #16a34a; 
+            color: white; 
+            padding: 12px 35px; 
+            text-decoration: none; 
+            border-radius: 50px; 
+            font-weight: 600; 
+            font-size: 13px;
+            box-shadow: 0 4px 15px rgba(22, 163, 74, 0.3);
+            transition: all 0.3s ease;
+        }
+        
+        /* Footer */
+        .footer { 
+            text-align: center; 
+            padding-top: 20px; 
+            color: #9ca3af; 
+            font-size: 11px; 
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="container">
+            <div class="header">
+                <h1>APSMod Notification</h1>
+            </div>
+
+            <div class="content">
+                
+                <div class="sender-card">
+                    <span class="avatar">{{ name[0] | upper }}</span>
+                    <span class="sender-name">{{ name }}</span>
+                    <a href="mailto:{{ user_email }}" class="sender-email">{{ user_email }}</a>
+                </div>
+
+                <span class="message-label">Message Content</span>
+                <div class="message-box">
+                    "{{ message }}"
+                </div>
+
+                <div class="btn-container">
+                    <a href="mailto:{{ user_email }}?subject=Re: Pesan dari APSMod" class="btn">Balas Pesan</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            &copy; 2026 APSMod System.<br>
+            Secure Automated Email.
+        </div>
+    </div>
+</body>
+</html>
