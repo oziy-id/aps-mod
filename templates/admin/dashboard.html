@@ -26,7 +26,7 @@
                     Add New App
                 </h2>
                 
-                <form action="/admin" method="post" enctype="multipart/form-data" class="space-y-5">
+                <form action="/admin" method="post" enctype="multipart/form-data" class="space-y-5" onsubmit="showLoading(this)">
                     <div>
                         <label class="text-xs font-bold text-slate-400 uppercase">App Icon (PDF/IMG)</label>
                         <input type="file" name="icon" accept=".pdf, image/*" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-bold file:bg-green-50 file:text-green-700 border border-slate-200 rounded-xl mt-1">
@@ -67,7 +67,13 @@
 
                     <textarea name="description" rows="3" placeholder="Description..." class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"></textarea>
                     
-                    <button type="submit" class="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-green-600 transition shadow-lg">Publish Now</button>
+                    <button type="submit" id="btn-publish" class="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-green-600 transition-all shadow-lg flex justify-center items-center gap-2 group">
+                        <span id="btn-text">Publish Now</span>
+                        <svg id="btn-loader" class="hidden w-5 h-5 text-white animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </button>
                 </form>
             </div>
         </div>
@@ -139,4 +145,18 @@
         </div>
     </div>
 </div>
+
+<script>
+function showLoading(form) {
+    const btn = document.getElementById('btn-publish');
+    const text = document.getElementById('btn-text');
+    const loader = document.getElementById('btn-loader');
+
+    // Ubah tampilan tombol
+    text.innerText = "Publishing...";
+    loader.classList.remove('hidden');
+    btn.disabled = true; // Matikan tombol agar tidak bisa diklik 2x
+    btn.classList.add('opacity-75', 'cursor-not-allowed'); // Efek visual disabled
+}
+</script>
 {% endblock %}
