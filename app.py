@@ -189,14 +189,8 @@ def index():
     if search_query: query = query.filter(Application.title.ilike(f'%{search_query}%'))
     if category_query: query = query.filter_by(category=category_query)
     
-    # 1. Apps Terbaru (Existing)
     apps = query.order_by(Application.created_at.desc()).all()
-    
-    # 2. Apps Featured (Existing)
     featured_apps = Application.query.filter_by(is_featured=True).order_by(Application.created_at.desc()).limit(5).all()
-    
-    # 3. LOGIKA BARU: Apps Terpopuler (Berdasarkan jumlah Download Terbanyak)
-    # Mengambil 5 aplikasi dengan download terbanyak, diurutkan DESC (besar ke kecil)
     popular_apps = Application.query.order_by(Application.downloads.desc()).limit(5).all()
 
     return render_template('index.html', apps=apps, featured_apps=featured_apps, popular_apps=popular_apps, search_query=search_query, current_category=category_query)
@@ -226,7 +220,6 @@ def detail(app_id):
 @app.route('/download/<int:app_id>')
 def download_file(app_id):
     app_obj = Application.query.get_or_404(app_id)
-    # LOGIKA PENTING: Menambah jumlah download setiap kali link diklik
     app_obj.downloads += 1
     db.session.commit()
     return redirect(app_obj.file_path)
@@ -339,13 +332,6 @@ def admin_dashboard():
         flash('Data dipublikasikan!', 'success')
         return redirect(url_for('admin_dashboard'))
 
-    apps = Application.query.order_by(Application.created_at.desc()).all()
-    logs = ActivityLog.query.order_by(ActivityLog.timestamp.desc()).limit(15).all()
-    partners = User.query.filter_by(role='partner').all() if session.get('role') == 'owner' else []
-    otp_obj = InviteCode.query.first()
-    current_otp = otp_obj.code if otp_obj else "Err"
-    return render_template('admin/dashboard.html', apps=apps, logs=logs, partners=partners, current_otp=current_otp)
-
 @app.route('/admin/kick_partner/<int:user_id>')
 @login_required
 def kick_partner(user_id):
@@ -366,6 +352,27 @@ def update_otp():
     if otp: otp.code = new
     else: db.session.add(InviteCode(code=new))
     db.session.commit()
+    return redirect(url_for('admin_dashboard'))
+
+# --- ROUTE BARU: UPDATE LINK & VERSI (MODIFIKASI LOGIKA) ---
+@app.route('/admin/update_link/<int:app_id>', methods=['POST'])
+@login_required
+def update_app_link(app_id):
+    app_obj = Application.query.get_or_404(app_id)
+    new_url = request.form.get('new_url')
+    new_version = request.form.get('new_version') # Ambil versi baru
+
+    if new_url and new_version:
+        app_obj.file_path = new_url
+        app_obj.version = new_version # Simpan versi baru
+        # Update tanggal dibuat agar muncul di paling atas (Latest)
+        app_obj.created_at = get_wib_now()
+        db.session.commit()
+        flash('Link & Versi berhasil diperbarui!', 'success')
+        log_activity("UPDATE APP", app_obj.title, f"v{new_version} By {session.get('email')}")
+    else:
+        flash('Link atau Versi tidak boleh kosong.', 'error')
+
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/delete/<int:app_id>')
