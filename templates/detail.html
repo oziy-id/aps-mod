@@ -40,7 +40,11 @@
             Get Link Download
         </a>
         
-        <p class="text-xs text-gray-400">Total Downloads: <span class="font-bold text-slate-600">{{ app.downloads }}x</span></p>
+        <div class="flex items-center justify-center gap-4 text-xs text-gray-400 font-medium relative z-10">
+            <p>Updated: <span class="text-slate-600 font-bold">{{ app.created_at.strftime('%d %B %Y') }}</span></p>
+            <span class="w-1 h-1 bg-gray-300 rounded-full"></span>
+            <p>Downloads: <span class="text-slate-600 font-bold">{{ app.downloads }}x</span></p>
+        </div>
     </div>
 
     <div class="mt-6 bg-white rounded-[1.5rem] border border-gray-100 shadow-sm overflow-hidden">
