@@ -127,11 +127,11 @@ Project ini sudah dikonfigurasi (`vercel.json`) untuk berjalan mulus di Vercel.
 
 | Home Page | Admin Dashboard |
 |:---:|:---:|
-| <img src="https://via.placeholder.com/400x200?text=Home+Page+Preview" alt="Home" width="400"/> | <img src="https://via.placeholder.com/400x200?text=Dashboard+Preview" alt="Dashboard" width="400"/> |
+| <img src="/static/view.jpg" alt="Home" width="400"/> | <img src="/static/admin_dashboard.jpg" alt="Dashboard" width="400"/> |
 
 | App Detail | Mobile View |
 |:---:|:---:|
-| <img src="https://via.placeholder.com/400x200?text=Detail+Page+Preview" alt="Detail" width="400"/> | <img src="https://via.placeholder.com/400x200?text=Mobile+Responsive" alt="Mobile" width="400"/> |
+| <img src="/static/detail_app.jpg" alt="Detail" width="400"/> | <img src="/static/mobile_view.jpg" alt="Mobile" width="400"/> |
 
 *(Note: Ganti link gambar di atas dengan screenshot asli aplikasi Anda)*
 
