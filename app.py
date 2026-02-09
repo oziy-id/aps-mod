@@ -1,9 +1,11 @@
 import os
 import functools
 import smtplib
+import random
+import string
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from flask import Flask, render_template, request, redirect, url_for, flash, session, send_from_directory
+from flask import Flask, render_template, request, redirect, url_for, flash, session
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
@@ -79,36 +81,37 @@ def delete_from_supabase(filename):
     except Exception as e:
         print(f"Supabase Delete Error: {e}")
 
-# --- EMAIL SENDER ---
-def send_contact_email(name, user_email, message):
+# --- EMAIL SENDER (CONTACT & RESET) ---
+def send_email(subject, recipient, template, **kwargs):
     try:
         msg = MIMEMultipart('alternative')
         msg['From'] = f"APSMod System <{app.config['MAIL_USERNAME']}>"
-        msg['To'] = app.config['MAIL_RECIPIENT']
-        msg['Reply-To'] = user_email
-        msg['Subject'] = f"Pesan Baru dari {name}"
-        try:
-            html_body = render_template('email.html', name=name, user_email=user_email, message=message)
-        except:
-            html_body = f"<h3>Pesan dari {name}</h3><p>{message}</p>"
+        msg['To'] = recipient
+        msg['Subject'] = subject
+        
+        html_body = render_template(template, **kwargs)
         msg.attach(MIMEText(html_body, 'html'))
+        
         server = smtplib.SMTP(app.config['MAIL_SERVER'], app.config['MAIL_PORT'])
         server.starttls()
         server.login(app.config['MAIL_USERNAME'], app.config['MAIL_PASSWORD'])
-        server.sendmail(app.config['MAIL_USERNAME'], app.config['MAIL_RECIPIENT'], msg.as_string())
+        server.sendmail(app.config['MAIL_USERNAME'], recipient, msg.as_string())
         server.quit()
         return True
     except Exception as e:
         print(f"EMAIL ERROR: {e}")
         return False
 
-# --- MODELS ---
+# --- MODELS (UPDATE: Reset Token) ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     role = db.Column(db.String(20), default='partner')
     created_at = db.Column(db.DateTime, default=get_wib_now)
+    # KOLOM BARU UNTUK RESET PASSWORD
+    reset_token = db.Column(db.String(10), nullable=True)
+    reset_token_expiry = db.Column(db.DateTime, nullable=True)
 
 class InviteCode(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -159,12 +162,11 @@ def create_initial_data():
 def login_required(f):
     @functools.wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return redirect(url_for('login'))
+        if 'user_id' not in session: return redirect(url_for('login'))
         user = User.query.get(session['user_id'])
         if not user:
             session.clear()
-            flash('Akun Anda telah dinonaktifkan oleh Owner.', 'error')
+            flash('Akun Anda telah dinonaktifkan.', 'error')
             return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
@@ -181,15 +183,12 @@ def log_activity(action, app_name, details):
 def index():
     search_query = request.args.get('q')
     category_query = request.args.get('category')
-    
     query = Application.query
     if search_query: query = query.filter(Application.title.ilike(f'%{search_query}%'))
     if category_query: query = query.filter_by(category=category_query)
-    
     apps = query.order_by(Application.created_at.desc()).all()
     featured_apps = Application.query.filter_by(is_featured=True).order_by(Application.created_at.desc()).limit(5).all()
     popular_apps = Application.query.order_by(Application.downloads.desc()).limit(5).all()
-
     return render_template('index.html', apps=apps, featured_apps=featured_apps, popular_apps=popular_apps, search_query=search_query, current_category=category_query)
 
 @app.route('/about')
@@ -201,7 +200,7 @@ def contact():
         name = request.form.get('name') 
         email = request.form.get('email')
         message = request.form.get('message')
-        if send_contact_email(name, email, message):
+        if send_email(f"Pesan Baru dari {name}", app.config['MAIL_RECIPIENT'], 'email.html', name=name, user_email=email, message=message):
             flash('Pesan berhasil dikirim!', 'success')
         else:
             flash('Gagal mengirim pesan.', 'error')
@@ -225,7 +224,7 @@ def download_file(app_id):
 def uploaded_file(filename):
     return redirect(get_supabase_url(filename))
 
-# --- AUTH ---
+# --- AUTH & PASSWORD RESET (BARU) ---
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if 'user_id' in session: return redirect(url_for('admin_dashboard'))
@@ -267,45 +266,79 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# --- ADMIN DASHBOARD (BAGIAN KRITIS YANG SERING ERROR) ---
+@app.route('/forgot_password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        user = User.query.filter_by(email=email).first()
+        if user:
+            # Generate 6 Digit OTP
+            otp = ''.join(random.choices(string.digits, k=6))
+            user.reset_token = otp
+            user.reset_token_expiry = get_wib_now() + timedelta(minutes=15) # Expired 15 menit
+            db.session.commit()
+            
+            # Kirim Email
+            send_email("Reset Password - APSMod", email, 'email_reset.html', otp=otp)
+            flash('Kode OTP telah dikirim ke email Anda.', 'success')
+            return redirect(url_for('reset_password', email=email))
+        else:
+            flash('Email tidak terdaftar sebagai partner.', 'error')
+    return render_template('forgot_password.html')
+
+@app.route('/reset_password', methods=['GET', 'POST'])
+def reset_password():
+    email = request.args.get('email') or request.form.get('email')
+    if request.method == 'POST':
+        otp_input = request.form.get('otp')
+        new_password = request.form.get('new_password')
+        
+        user = User.query.filter_by(email=email).first()
+        if user:
+            if user.reset_token == otp_input and user.reset_token_expiry > get_wib_now():
+                user.password_hash = generate_password_hash(new_password)
+                user.reset_token = None # Hapus token setelah dipakai
+                user.reset_token_expiry = None
+                db.session.commit()
+                flash('Password berhasil diubah! Silakan login.', 'success')
+                return redirect(url_for('login'))
+            else:
+                flash('Kode OTP salah atau sudah kadaluarsa.', 'error')
+        else:
+            flash('Terjadi kesalahan.', 'error')
+            
+    return render_template('reset_password.html', email=email)
+
+# --- ADMIN DASHBOARD ---
 @app.route('/admin', methods=['GET', 'POST'])
 @login_required
 def admin_dashboard():
-    # --- LOGIKA POST (UPLOAD/UPDATE) ---
     if request.method == 'POST':
         download_url = request.form.get('download_url')
         manual_size = request.form.get('size', '0 MB')
-        
         icon_file = request.files.get('icon')
         screenshot_files = request.files.getlist('screenshots') 
-        
         title_input = request.form.get('title')
         description_input = request.form.get('description')
         version_input = request.form.get('version', 'Latest')
         category_input = request.form.get('category', 'Games')
         orientation_input = request.form.get('orientation', 'landscape')
         is_featured_input = 'is_featured' in request.form
-
         if not title_input: return redirect(request.url)
-
         existing_app = Application.query.filter_by(title=title_input).first()
         app_obj = existing_app if existing_app else Application(title=title_input)
-        
         if not existing_app:
             db.session.add(app_obj)
             log_activity("UPLOAD", title_input, f"By {session.get('email')}")
         else:
             log_activity("UPDATE", title_input, f"Updated by {session.get('email')}")
-
         if download_url:
             app_obj.file_path = download_url
             app_obj.size = manual_size
-
         if icon_file and allowed_media(icon_file.filename):
             icon_filename = secure_filename(f"icon_{datetime.now().timestamp()}_{icon_file.filename}")
             upload_to_supabase(icon_file, icon_filename) 
             app_obj.icon_path = icon_filename
-        
         app_obj.description = description_input
         app_obj.version = version_input
         app_obj.category = category_input
@@ -313,7 +346,6 @@ def admin_dashboard():
         app_obj.uploader_email = session.get('email')
         app_obj.created_at = get_wib_now()
         db.session.commit()
-
         if screenshot_files and screenshot_files[0].filename != '':
             AppScreenshot.query.filter_by(app_id=app_obj.id).delete()
             for i, ss in enumerate(screenshot_files):
@@ -326,11 +358,9 @@ def admin_dashboard():
                         app_obj.screenshot_path = ss_name
                         app_obj.screenshot_orient = orientation_input
             db.session.commit()
-            
         flash('Data dipublikasikan!', 'success')
         return redirect(url_for('admin_dashboard'))
 
-    # --- LOGIKA GET (TAMPILAN) - INI HARUS DI LUAR BLOK POST ---
     apps = Application.query.order_by(Application.created_at.desc()).all()
     logs = ActivityLog.query.order_by(ActivityLog.timestamp.desc()).limit(15).all()
     partners = User.query.filter_by(role='partner').all() if session.get('role') == 'owner' else []
@@ -360,14 +390,12 @@ def update_otp():
     db.session.commit()
     return redirect(url_for('admin_dashboard'))
 
-# --- ROUTE UPDATE LINK & VERSI ---
 @app.route('/admin/update_link/<int:app_id>', methods=['POST'])
 @login_required
 def update_app_link(app_id):
     app_obj = Application.query.get_or_404(app_id)
     new_url = request.form.get('new_url')
     new_version = request.form.get('new_version') 
-
     if new_url and new_version:
         app_obj.file_path = new_url
         app_obj.version = new_version
@@ -377,7 +405,6 @@ def update_app_link(app_id):
         log_activity("UPDATE APP", app_obj.title, f"v{new_version} By {session.get('email')}")
     else:
         flash('Link atau Versi tidak boleh kosong.', 'error')
-
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/delete/<int:app_id>')
