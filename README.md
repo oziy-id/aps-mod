@@ -99,7 +99,7 @@ Pastikan Anda sudah menginstal:
     MAIL_RECIPIENT=email_penerima_laporan@gmail.com
     
     # Kode OTP Awal untuk Registrasi Partner
-    INVITE_CODE=6453
+    INVITE_CODE=123
     ```
 
 5.  **Jalankan Aplikasi**
