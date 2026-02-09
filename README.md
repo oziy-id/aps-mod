@@ -127,13 +127,11 @@ Project ini sudah dikonfigurasi (`vercel.json`) untuk berjalan mulus di Vercel.
 
 | Home Page | Admin Dashboard |
 |:---:|:---:|
-| <img src="/static/view.jpg" alt="Home" width="400"/> | <img src="/static/admin_dashboard.jpg" alt="Dashboard" width="400"/> |
+| <img src="/static/view.jpg" alt="Home" width="300"/> | <img src="/static/admin_dashboard.jpg" alt="Dashboard" width="300"/> |
 
 | App Detail | Mobile View |
 |:---:|:---:|
-| <img src="/static/detail_app.jpg" alt="Detail" width="400"/> | <img src="/static/mobile_view.jpg" alt="Mobile" width="400"/> |
-
-*(Note: Ganti link gambar di atas dengan screenshot asli aplikasi Anda)*
+| <img src="/static/detail_app.jpg" alt="Detail" width="300"/> | <img src="/static/mobile_view.jpg" alt="Mobile" width="300"/> |
 
 ---
 
