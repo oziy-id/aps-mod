@@ -1,10 +1,12 @@
 import os
+import io  # <--- [BARU] Untuk wadah memori gambar
 import functools
 import smtplib
 import random
 import string
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from PIL import Image  # <--- [BARU] Library Pengolah Gambar (Pillow)
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -59,13 +61,56 @@ def allowed_file(filename):
 def allowed_media(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'webp', 'pdf'}
 
-def upload_to_supabase(file, filename):
+# --- [FITUR BARU] FUNGSI KOMPRES GAMBAR ---
+def compress_image(file_storage, is_icon=False):
+    """
+    Fungsi sakti untuk mengecilkan ukuran gambar secara otomatis.
+    - Icon: Convert ke WEBP (support transparan), Max 512px
+    - Screenshot: Convert ke JPEG (hemat size), Max 1280px (HD)
+    """
+    try:
+        # Buka gambar dari file upload
+        img = Image.open(file_storage)
+        
+        # Siapkan wadah memori kosong
+        output = io.BytesIO()
+        
+        if is_icon:
+            # LOGIKA ICON: Resize 512px, Format WEBP
+            img.thumbnail((512, 512)) 
+            img.save(output, format='WEBP', quality=90)
+            # Ganti ekstensi nama file jadi .webp
+            new_filename = file_storage.filename.rsplit('.', 1)[0] + ".webp"
+            mimetype = 'image/webp'
+        else:
+            # LOGIKA SCREENSHOT: Convert RGB (hilangkan alpha), Resize HD, Format JPEG
+            if img.mode in ("RGBA", "P"): 
+                img = img.convert("RGB") # JPG gabisa transparan, jadi harus convert ke RGB
+            
+            img.thumbnail((1280, 720)) 
+            img.save(output, format='JPEG', quality=80, optimize=True)
+            # Ganti ekstensi nama file jadi .jpg
+            new_filename = file_storage.filename.rsplit('.', 1)[0] + ".jpg"
+            mimetype = 'image/jpeg'
+            
+        # Kembalikan posisi bacaan file ke awal
+        output.seek(0)
+        
+        return output, new_filename, mimetype
+    except Exception as e:
+        print(f"Gagal kompres gambar: {e}")
+        # Jika gagal kompres, kembalikan file asli apa adanya
+        file_storage.seek(0)
+        return file_storage, file_storage.filename, getattr(file_storage, 'content_type', 'application/octet-stream')
+
+# --- [UPDATE] UPLOAD FUNCTION (Terima Content-Type Manual) ---
+def upload_to_supabase(file, filename, content_type):
     try:
         file_content = file.read()
         res = supabase.storage.from_(app.config['SUPABASE_BUCKET']).upload(
             path=filename,
             file=file_content,
-            file_options={"content-type": file.content_type, "upsert": "true"}
+            file_options={"content-type": content_type, "upsert": "true"}
         )
         return True
     except Exception as e:
@@ -102,14 +147,13 @@ def send_email(subject, recipient, template, **kwargs):
         print(f"EMAIL ERROR: {e}")
         return False
 
-# --- MODELS (UPDATE: Reset Token) ---
+# --- MODELS ---
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     role = db.Column(db.String(20), default='partner')
     created_at = db.Column(db.DateTime, default=get_wib_now)
-    # KOLOM BARU UNTUK RESET PASSWORD
     reset_token = db.Column(db.String(10), nullable=True)
     reset_token_expiry = db.Column(db.DateTime, nullable=True)
 
@@ -224,7 +268,7 @@ def download_file(app_id):
 def uploaded_file(filename):
     return redirect(get_supabase_url(filename))
 
-# --- AUTH & PASSWORD RESET (BARU) ---
+# --- AUTH & PASSWORD RESET ---
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if 'user_id' in session: return redirect(url_for('admin_dashboard'))
@@ -272,13 +316,10 @@ def forgot_password():
         email = request.form.get('email')
         user = User.query.filter_by(email=email).first()
         if user:
-            # Generate 6 Digit OTP
             otp = ''.join(random.choices(string.digits, k=6))
             user.reset_token = otp
-            user.reset_token_expiry = get_wib_now() + timedelta(minutes=15) # Expired 15 menit
+            user.reset_token_expiry = get_wib_now() + timedelta(minutes=15)
             db.session.commit()
-            
-            # Kirim Email
             send_email("Reset Password - APSMod", email, 'email_reset.html', otp=otp)
             flash('Kode OTP telah dikirim ke email Anda.', 'success')
             return redirect(url_for('reset_password', email=email))
@@ -292,12 +333,11 @@ def reset_password():
     if request.method == 'POST':
         otp_input = request.form.get('otp')
         new_password = request.form.get('new_password')
-        
         user = User.query.filter_by(email=email).first()
         if user:
             if user.reset_token == otp_input and user.reset_token_expiry > get_wib_now():
                 user.password_hash = generate_password_hash(new_password)
-                user.reset_token = None # Hapus token setelah dipakai
+                user.reset_token = None
                 user.reset_token_expiry = None
                 db.session.commit()
                 flash('Password berhasil diubah! Silakan login.', 'success')
@@ -306,10 +346,9 @@ def reset_password():
                 flash('Kode OTP salah atau sudah kadaluarsa.', 'error')
         else:
             flash('Terjadi kesalahan.', 'error')
-            
     return render_template('reset_password.html', email=email)
 
-# --- ADMIN DASHBOARD ---
+# --- ADMIN DASHBOARD (UPDATED) ---
 @app.route('/admin', methods=['GET', 'POST'])
 @login_required
 def admin_dashboard():
@@ -324,21 +363,32 @@ def admin_dashboard():
         category_input = request.form.get('category', 'Games')
         orientation_input = request.form.get('orientation', 'landscape')
         is_featured_input = 'is_featured' in request.form
+        
         if not title_input: return redirect(request.url)
+        
         existing_app = Application.query.filter_by(title=title_input).first()
         app_obj = existing_app if existing_app else Application(title=title_input)
+        
         if not existing_app:
             db.session.add(app_obj)
             log_activity("UPLOAD", title_input, f"By {session.get('email')}")
         else:
             log_activity("UPDATE", title_input, f"Updated by {session.get('email')}")
+            
         if download_url:
             app_obj.file_path = download_url
             app_obj.size = manual_size
+            
+        # --- [FITUR KOMPRES ICON] ---
         if icon_file and allowed_media(icon_file.filename):
-            icon_filename = secure_filename(f"icon_{datetime.now().timestamp()}_{icon_file.filename}")
-            upload_to_supabase(icon_file, icon_filename) 
+            # Kompres dulu sebelum upload
+            compressed_file, new_name, new_mime = compress_image(icon_file, is_icon=True)
+            icon_filename = secure_filename(f"icon_{datetime.now().timestamp()}_{new_name}")
+            
+            # Upload file hasil kompres
+            upload_to_supabase(compressed_file, icon_filename, new_mime) 
             app_obj.icon_path = icon_filename
+            
         app_obj.description = description_input
         app_obj.version = version_input
         app_obj.category = category_input
@@ -346,18 +396,26 @@ def admin_dashboard():
         app_obj.uploader_email = session.get('email')
         app_obj.created_at = get_wib_now()
         db.session.commit()
+        
+        # --- [FITUR KOMPRES SCREENSHOT] ---
         if screenshot_files and screenshot_files[0].filename != '':
             AppScreenshot.query.filter_by(app_id=app_obj.id).delete()
             for i, ss in enumerate(screenshot_files):
                 if ss and allowed_media(ss.filename):
-                    ss_name = secure_filename(f"ss_{datetime.now().timestamp()}_{ss.filename}")
-                    upload_to_supabase(ss, ss_name)
-                    new_ss = AppScreenshot(app_id=app_obj.id, image_path=ss_name, orientation=orientation_input)
+                    # Kompres dulu sebelum upload
+                    compressed_ss, ss_name, ss_mime = compress_image(ss, is_icon=False)
+                    final_ss_name = secure_filename(f"ss_{datetime.now().timestamp()}_{ss_name}")
+                    
+                    # Upload file hasil kompres
+                    upload_to_supabase(compressed_ss, final_ss_name, ss_mime)
+                    
+                    new_ss = AppScreenshot(app_id=app_obj.id, image_path=final_ss_name, orientation=orientation_input)
                     db.session.add(new_ss)
                     if i == 0:
-                        app_obj.screenshot_path = ss_name
+                        app_obj.screenshot_path = final_ss_name
                         app_obj.screenshot_orient = orientation_input
             db.session.commit()
+            
         flash('Data dipublikasikan!', 'success')
         return redirect(url_for('admin_dashboard'))
 
