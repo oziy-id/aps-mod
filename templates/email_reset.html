@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5; padding: 20px; }
+        .container { max-width: 500px; background: white; margin: 0 auto; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .header { background: #0F172A; padding: 30px; text-align: center; }
+        .header h1 { color: white; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -1px; }
+        .content { padding: 40px 30px; text-align: center; }
+        .otp-box { background: #f0fdf4; color: #15803d; font-size: 32px; font-weight: bold; letter-spacing: 5px; padding: 20px; border-radius: 12px; border: 2px dashed #bbf7d0; margin: 20px 0; display: inline-block; }
+        .footer { padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; background: #f8fafc; border-top: 1px solid #e2e8f0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>APS<span style="color:#22c55e">Mod</span></h1>
+        </div>
+        <div class="content">
+            <h2 style="color:#1e293b; margin-top:0;">Password Reset Request</h2>
+            <p style="color:#64748b; line-height:1.6;">Hello,</p>
+            <p style="color:#64748b; line-height:1.6;">Kami menerima permintaan untuk mereset password akun APSMod Anda. Gunakan kode OTP di bawah ini untuk melanjutkan:</p>
+            
+            <div class="otp-box">{{ otp }}</div>
+            
+            <p style="color:#64748b; font-size:12px;">Kode ini hanya berlaku selama 15 menit.<br>Jika Anda tidak merasa meminta ini, abaikan saja.</p>
+        </div>
+        <div class="footer">
+            &copy; 2026 APSMod System. All rights reserved.
+        </div>
+    </div>
+</body>
+</html>￼Enter
