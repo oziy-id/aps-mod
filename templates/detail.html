@@ -53,7 +53,7 @@
                 <span class="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                 </span>
-                <span class="font-bold text-slate-800">Cara Download (Video Tutorial)</span>
+                <span class="font-bold text-slate-800">How to download (Video Tutorial)</span>
             </div>
             <svg id="chevron-icon" class="w-5 h-5 text-slate-400 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </button>
@@ -93,8 +93,8 @@
 
     <div class="bg-white rounded-[2rem] p-8 shadow-sm border border-gray-100 mb-12">
         <div class="flex items-center justify-between mb-6">
-            <h3 class="text-lg font-bold text-slate-800">Requests & Comments</h3>
-            <span class="text-xs px-2 py-1 bg-gray-100 text-gray-500 rounded-lg font-bold">{{ comments|length }} Comments</span>
+            <h3 class="text-lg font-bold text-slate-800">Discussion</h3>
+            <span class="text-xs px-2 py-1 bg-gray-100 text-gray-500 rounded-lg font-bold">{{ comments|length }} Top Threads</span>
         </div>
 
         <form id="commentForm" action="{{ url_for('add_comment', app_id=app.id) }}" method="POST" class="mb-8" onsubmit="return handleCommentSubmit()">
@@ -113,7 +113,7 @@
             {% endif %}
 
             <div class="relative">
-                <textarea name="content" rows="3" placeholder="Write a comment or request update..." required
+                <textarea name="content" rows="3" placeholder="Write a comment..." required
                     class="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium transition resize-none"></textarea>
                 
                 <button type="submit" id="submitBtn" class="absolute bottom-3 right-3 bg-slate-900 text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-green-600 transition flex items-center gap-2">
@@ -151,11 +151,59 @@
                             {% endif %}
                             <span class="text-[10px] text-gray-400 ml-auto">{{ comment.created_at.strftime('%d/%m %H:%M') }}</span>
                         </div>
-                        <p class="text-sm text-gray-600 leading-relaxed bg-gray-50 p-3 rounded-tr-2xl rounded-br-2xl rounded-bl-2xl">
+                        <p class="text-sm text-gray-600 leading-relaxed bg-gray-50 p-3 rounded-tr-2xl rounded-br-2xl rounded-bl-2xl mb-2">
                             {{ comment.content }}
+                        </p>
+                        
+                        {% if 'user_id' in session %}
+                        <button onclick="toggleReply('reply-{{ comment.id }}')" class="text-xs font-bold text-slate-500 hover:text-slate-900 flex items-center gap-1 ml-2">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                            Reply
+                        </button>
+
+                        <div id="reply-{{ comment.id }}" class="hidden ml-12 mt-3">
+                            <form action="{{ url_for('add_comment', app_id=app.id) }}" method="POST" class="flex flex-col gap-2">
+                                <input type="hidden" name="parent_id" value="{{ comment.id }}">
+                                
+                                <div class="flex gap-2">
+                                    <textarea name="content" rows="1" placeholder="Reply as {{ session.get('role')|capitalize }}..." required class="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs resize-none"></textarea>
+                                    <button type="submit" class="bg-slate-900 text-white px-3 py-2 rounded-lg text-xs font-bold">Reply</button>
+                                </div>
+                            </form>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% for reply in comment.replies %}
+                <div class="flex items-start gap-3 mt-3 ml-12 pl-4 border-l-2 border-gray-100">
+                    <div class="flex-shrink-0">
+                        {% if reply.is_developer %}
+                            <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 border border-blue-200">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                            </div>
+                        {% else %}
+                            <div class="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 font-bold text-sm">
+                                {{ reply.name[0] }}
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="font-bold text-slate-800 text-xs">{{ reply.name }}</span>
+                            {% if reply.is_developer %}
+                                <span class="bg-blue-100 text-blue-700 text-[8px] px-1 py-0.5 rounded border border-blue-200 font-bold uppercase tracking-wide">
+                                    {{ "Owner" if reply.name == "Developer" else "Partner" }}
+                                </span>
+                            {% endif %}
+                            <span class="text-[10px] text-gray-400 ml-auto">{{ reply.created_at.strftime('%d/%m %H:%M') }}</span>
+                        </div>
+                        <p class="text-xs text-gray-600 leading-relaxed bg-gray-50 p-2.5 rounded-tr-2xl rounded-br-2xl rounded-bl-2xl">
+                            {{ reply.content }}
                         </p>
                     </div>
                 </div>
+                {% endfor %}
             </div>
             {% else %}
             <div class="text-center py-8 text-gray-400">
@@ -174,7 +222,6 @@
 </div>
 
 <script>
-// --- LOGIKA VIDEO TUTORIAL ---
 function toggleTutorial() {
     const content = document.getElementById('tutorial-content');
     const icon = document.getElementById('chevron-icon');
@@ -191,7 +238,15 @@ function toggleTutorial() {
     }
 }
 
-// --- LOGIKA KOMENTAR ---
+function toggleReply(id) {
+    const form = document.getElementById(id);
+    if (form.classList.contains('hidden')) {
+        form.classList.remove('hidden');
+    } else {
+        form.classList.add('hidden');
+    }
+}
+
 function showAllComments() {
     document.querySelectorAll('.hidden-comment').forEach(el => {
         el.classList.remove('hidden-comment');
@@ -199,9 +254,8 @@ function showAllComments() {
     document.getElementById('loadMoreBtn').style.display = 'none';
 }
 
-// LOGIKA TIMER 30 MENIT (ANTI SPAM)
-const STORAGE_KEY = 'last_comment_time_' + "{{ app.id }}"; // Unik per aplikasi
-const COOLDOWN_TIME = 30 * 60 * 1000; // 30 Menit dalam milidetik
+const STORAGE_KEY = 'last_comment_time_' + "{{ app.id }}"; 
+const COOLDOWN_TIME = 30 * 60 * 1000; 
 
 function checkTimer() {
     const lastTime = localStorage.getItem(STORAGE_KEY);
@@ -214,7 +268,6 @@ function checkTimer() {
         const diff = now - parseInt(lastTime);
 
         if (diff < COOLDOWN_TIME) {
-            // Masih dalam masa cooldown
             submitBtn.disabled = true;
             submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
             timerMsg.classList.remove('hidden');
@@ -223,10 +276,8 @@ function checkTimer() {
             const minutes = Math.floor(remaining / 60);
             const seconds = remaining % 60;
             countdownSpan.innerText = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-            
-            setTimeout(checkTimer, 1000); // Update setiap detik
+            setTimeout(checkTimer, 1000);
         } else {
-            // Cooldown selesai
             localStorage.removeItem(STORAGE_KEY);
             submitBtn.disabled = false;
             submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
@@ -237,20 +288,14 @@ function checkTimer() {
 
 function handleCommentSubmit() {
     const submitBtn = document.getElementById('submitBtn');
-    
-    // Animasi Kirim
     submitBtn.innerHTML = `<svg class="animate-spin h-3 w-3 mr-2 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Sending...`;
     
-    // Set Timer di LocalStorage (Hanya jika user bukan dev/partner)
-    // Kita cek apakah input 'name' ada, kalau ada berarti user public
     if (document.querySelector('input[name="name"]')) {
         localStorage.setItem(STORAGE_KEY, new Date().getTime());
     }
-    
-    return true; // Lanjutkan submit form
+    return true; 
 }
 
-// Jalankan cek timer saat halaman dimuat
 document.addEventListener('DOMContentLoaded', checkTimer);
 </script>
 
