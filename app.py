@@ -1,13 +1,14 @@
 import os
-import io  # <--- [BARU] Untuk wadah memori gambar
+import io
 import functools
 import smtplib
 import random
 import string
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from PIL import Image  # <--- [BARU] Library Pengolah Gambar (Pillow)
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from PIL import Image
+# Tambahkan 'make_response' untuk cookie timer
+from flask import Flask, render_template, request, redirect, url_for, flash, session, make_response 
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
@@ -61,49 +62,29 @@ def allowed_file(filename):
 def allowed_media(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'webp', 'pdf'}
 
-# --- [FITUR BARU] FUNGSI KOMPRES GAMBAR ---
+# --- FUNGSI KOMPRES GAMBAR ---
 def compress_image(file_storage, is_icon=False):
-    """
-    Fungsi sakti untuk mengecilkan ukuran gambar secara otomatis.
-    - Icon: Convert ke WEBP (support transparan), Max 512px
-    - Screenshot: Convert ke JPEG (hemat size), Max 1280px (HD)
-    """
     try:
-        # Buka gambar dari file upload
         img = Image.open(file_storage)
-        
-        # Siapkan wadah memori kosong
         output = io.BytesIO()
-        
         if is_icon:
-            # LOGIKA ICON: Resize 512px, Format WEBP
             img.thumbnail((512, 512)) 
             img.save(output, format='WEBP', quality=90)
-            # Ganti ekstensi nama file jadi .webp
             new_filename = file_storage.filename.rsplit('.', 1)[0] + ".webp"
             mimetype = 'image/webp'
         else:
-            # LOGIKA SCREENSHOT: Convert RGB (hilangkan alpha), Resize HD, Format JPEG
-            if img.mode in ("RGBA", "P"): 
-                img = img.convert("RGB") # JPG gabisa transparan, jadi harus convert ke RGB
-            
+            if img.mode in ("RGBA", "P"): img = img.convert("RGB")
             img.thumbnail((1280, 720)) 
             img.save(output, format='JPEG', quality=80, optimize=True)
-            # Ganti ekstensi nama file jadi .jpg
             new_filename = file_storage.filename.rsplit('.', 1)[0] + ".jpg"
             mimetype = 'image/jpeg'
-            
-        # Kembalikan posisi bacaan file ke awal
         output.seek(0)
-        
         return output, new_filename, mimetype
     except Exception as e:
         print(f"Gagal kompres gambar: {e}")
-        # Jika gagal kompres, kembalikan file asli apa adanya
         file_storage.seek(0)
         return file_storage, file_storage.filename, getattr(file_storage, 'content_type', 'application/octet-stream')
 
-# --- [UPDATE] UPLOAD FUNCTION (Terima Content-Type Manual) ---
 def upload_to_supabase(file, filename, content_type):
     try:
         file_content = file.read()
@@ -126,17 +107,15 @@ def delete_from_supabase(filename):
     except Exception as e:
         print(f"Supabase Delete Error: {e}")
 
-# --- EMAIL SENDER (CONTACT & RESET) ---
+# --- EMAIL SENDER ---
 def send_email(subject, recipient, template, **kwargs):
     try:
         msg = MIMEMultipart('alternative')
         msg['From'] = f"APSMod System <{app.config['MAIL_USERNAME']}>"
         msg['To'] = recipient
         msg['Subject'] = subject
-        
         html_body = render_template(template, **kwargs)
         msg.attach(MIMEText(html_body, 'html'))
-        
         server = smtplib.SMTP(app.config['MAIL_SERVER'], app.config['MAIL_PORT'])
         server.starttls()
         server.login(app.config['MAIL_USERNAME'], app.config['MAIL_PASSWORD'])
@@ -174,6 +153,8 @@ class Application(db.Model):
     screenshot_path = db.Column(db.String(200)) 
     screenshot_orient = db.Column(db.String(20), default='landscape')
     screenshots = db.relationship('AppScreenshot', backref='app', lazy=True, cascade="all, delete-orphan")
+    # [BARU] Relasi ke Komentar
+    comments = db.relationship('Comment', backref='app', lazy=True, cascade="all, delete-orphan")
     downloads = db.Column(db.Integer, default=0)
     rating = db.Column(db.Float, default=4.5)
     created_at = db.Column(db.DateTime, default=get_wib_now)
@@ -184,6 +165,15 @@ class AppScreenshot(db.Model):
     app_id = db.Column(db.Integer, db.ForeignKey('application.id'), nullable=False)
     image_path = db.Column(db.String(200), nullable=False)
     orientation = db.Column(db.String(20), default='landscape')
+
+# [BARU] Model Komentar
+class Comment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    app_id = db.Column(db.Integer, db.ForeignKey('application.id'), nullable=False)
+    name = db.Column(db.String(50), nullable=False)
+    content = db.Column(db.String(500), nullable=False)
+    is_developer = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=get_wib_now)
 
 class ActivityLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -227,13 +217,21 @@ def log_activity(action, app_name, details):
 def index():
     search_query = request.args.get('q')
     category_query = request.args.get('category')
+    # [BARU] Ambil nomor halaman dari URL, default halaman 1
+    page = request.args.get('page', 1, type=int)
+    per_page = 12 # Batasi 12 aplikasi per halaman
+
     query = Application.query
     if search_query: query = query.filter(Application.title.ilike(f'%{search_query}%'))
     if category_query: query = query.filter_by(category=category_query)
-    apps = query.order_by(Application.created_at.desc()).all()
+    
+    # [BARU] Gunakan pagination
+    paginated_apps = query.order_by(Application.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
+    
     featured_apps = Application.query.filter_by(is_featured=True).order_by(Application.created_at.desc()).limit(5).all()
     popular_apps = Application.query.order_by(Application.downloads.desc()).limit(5).all()
-    return render_template('index.html', apps=apps, featured_apps=featured_apps, popular_apps=popular_apps, search_query=search_query, current_category=category_query)
+    
+    return render_template('index.html', apps=paginated_apps, featured_apps=featured_apps, popular_apps=popular_apps, search_query=search_query, current_category=category_query)
 
 @app.route('/about')
 def about(): return render_template('about.html')
@@ -255,7 +253,63 @@ def contact():
 def detail(app_id):
     app = Application.query.get_or_404(app_id)
     is_pdf_icon = app.icon_path and app.icon_path.lower().endswith('.pdf')
-    return render_template('detail.html', app=app, is_pdf_icon=is_pdf_icon)
+    # Urutkan komentar dari yang terbaru
+    comments = Comment.query.filter_by(app_id=app_id).order_by(Comment.created_at.desc()).all()
+    return render_template('detail.html', app=app, is_pdf_icon=is_pdf_icon, comments=comments)
+
+# [BARU] Route Kirim Komentar (Anti Spam + Cleaner)
+@app.route('/app/<int:app_id>/comment', methods=['POST'])
+def add_comment(app_id):
+    app_obj = Application.query.get_or_404(app_id)
+    content = request.form.get('content')
+    
+    # Cek apakah user adalah Developer/Partner
+    is_dev = 'user_id' in session
+    
+    if is_dev:
+        # Developer bebas spam, nama otomatis
+        # Ambil role untuk label yang tepat (Owner/Partner)
+        role = session.get('role', 'partner')
+        if role == 'owner':
+            name = "Developer"
+        else:
+            name = "Team Partner"
+        is_developer = True
+    else:
+        # User Biasa
+        name = request.form.get('name')
+        is_developer = False
+        
+        # [ANTI SPAM 1] Cek Cookie Server-Side
+        last_comment_time = request.cookies.get('last_comment_time')
+        if last_comment_time:
+             # Hitung selisih waktu
+            try:
+                last_time = datetime.fromtimestamp(float(last_comment_time))
+                if datetime.now() - last_time < timedelta(minutes=30):
+                    flash('Tunggu 30 menit sebelum komentar lagi!', 'error')
+                    return redirect(url_for('detail', app_id=app_id))
+            except: pass
+
+    if content:
+        new_comment = Comment(app_id=app_id, name=name, content=content, is_developer=is_developer)
+        db.session.add(new_comment)
+        
+        # [AUTO CLEANER] Hapus komentar > 30 hari setiap kali ada komen baru
+        thirty_days_ago = get_wib_now() - timedelta(days=30)
+        old_comments = Comment.query.filter(Comment.created_at < thirty_days_ago).delete()
+        
+        db.session.commit()
+        flash('Komentar terkirim!', 'success')
+    
+    # Buat Response untuk set Cookie (Khusus User Biasa)
+    resp = make_response(redirect(url_for('detail', app_id=app_id)))
+    if not is_dev:
+        # Set cookie expired 30 menit
+        expire_date = datetime.now() + timedelta(minutes=30)
+        resp.set_cookie('last_comment_time', str(datetime.now().timestamp()), expires=expire_date)
+        
+    return resp
 
 @app.route('/download/<int:app_id>')
 def download_file(app_id):
@@ -348,7 +402,7 @@ def reset_password():
             flash('Terjadi kesalahan.', 'error')
     return render_template('reset_password.html', email=email)
 
-# --- ADMIN DASHBOARD (UPDATED) ---
+# --- ADMIN DASHBOARD ---
 @app.route('/admin', methods=['GET', 'POST'])
 @login_required
 def admin_dashboard():
@@ -379,13 +433,9 @@ def admin_dashboard():
             app_obj.file_path = download_url
             app_obj.size = manual_size
             
-        # --- [FITUR KOMPRES ICON] ---
         if icon_file and allowed_media(icon_file.filename):
-            # Kompres dulu sebelum upload
             compressed_file, new_name, new_mime = compress_image(icon_file, is_icon=True)
             icon_filename = secure_filename(f"icon_{datetime.now().timestamp()}_{new_name}")
-            
-            # Upload file hasil kompres
             upload_to_supabase(compressed_file, icon_filename, new_mime) 
             app_obj.icon_path = icon_filename
             
@@ -397,18 +447,13 @@ def admin_dashboard():
         app_obj.created_at = get_wib_now()
         db.session.commit()
         
-        # --- [FITUR KOMPRES SCREENSHOT] ---
         if screenshot_files and screenshot_files[0].filename != '':
             AppScreenshot.query.filter_by(app_id=app_obj.id).delete()
             for i, ss in enumerate(screenshot_files):
                 if ss and allowed_media(ss.filename):
-                    # Kompres dulu sebelum upload
                     compressed_ss, ss_name, ss_mime = compress_image(ss, is_icon=False)
                     final_ss_name = secure_filename(f"ss_{datetime.now().timestamp()}_{ss_name}")
-                    
-                    # Upload file hasil kompres
                     upload_to_supabase(compressed_ss, final_ss_name, ss_mime)
-                    
                     new_ss = AppScreenshot(app_id=app_obj.id, image_path=final_ss_name, orientation=orientation_input)
                     db.session.add(new_ss)
                     if i == 0:
