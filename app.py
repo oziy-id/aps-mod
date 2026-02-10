@@ -7,7 +7,6 @@ import string
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from PIL import Image
-# Tambahkan 'make_response' untuk cookie timer
 from flask import Flask, render_template, request, redirect, url_for, flash, session, make_response 
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -153,7 +152,6 @@ class Application(db.Model):
     screenshot_path = db.Column(db.String(200)) 
     screenshot_orient = db.Column(db.String(20), default='landscape')
     screenshots = db.relationship('AppScreenshot', backref='app', lazy=True, cascade="all, delete-orphan")
-    # [BARU] Relasi ke Komentar
     comments = db.relationship('Comment', backref='app', lazy=True, cascade="all, delete-orphan")
     downloads = db.Column(db.Integer, default=0)
     rating = db.Column(db.Float, default=4.5)
@@ -166,7 +164,7 @@ class AppScreenshot(db.Model):
     image_path = db.Column(db.String(200), nullable=False)
     orientation = db.Column(db.String(20), default='landscape')
 
-# [BARU] Model Komentar
+# [UPDATE] Model Komentar dengan Parent ID (Reply System)
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     app_id = db.Column(db.Integer, db.ForeignKey('application.id'), nullable=False)
@@ -174,6 +172,9 @@ class Comment(db.Model):
     content = db.Column(db.String(500), nullable=False)
     is_developer = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=get_wib_now)
+    # Kolom untuk Reply
+    parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=True)
+    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic')
 
 class ActivityLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -217,15 +218,13 @@ def log_activity(action, app_name, details):
 def index():
     search_query = request.args.get('q')
     category_query = request.args.get('category')
-    # [BARU] Ambil nomor halaman dari URL, default halaman 1
     page = request.args.get('page', 1, type=int)
-    per_page = 12 # Batasi 12 aplikasi per halaman
+    per_page = 12 
 
     query = Application.query
     if search_query: query = query.filter(Application.title.ilike(f'%{search_query}%'))
     if category_query: query = query.filter_by(category=category_query)
     
-    # [BARU] Gunakan pagination
     paginated_apps = query.order_by(Application.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
     
     featured_apps = Application.query.filter_by(is_featured=True).order_by(Application.created_at.desc()).limit(5).all()
@@ -253,22 +252,24 @@ def contact():
 def detail(app_id):
     app = Application.query.get_or_404(app_id)
     is_pdf_icon = app.icon_path and app.icon_path.lower().endswith('.pdf')
-    # Urutkan komentar dari yang terbaru
-    comments = Comment.query.filter_by(app_id=app_id).order_by(Comment.created_at.desc()).all()
+    # [UPDATE] Hanya ambil komentar INDUK (yang tidak punya parent)
+    comments = Comment.query.filter_by(app_id=app_id, parent_id=None).order_by(Comment.created_at.desc()).all()
     return render_template('detail.html', app=app, is_pdf_icon=is_pdf_icon, comments=comments)
 
-# [BARU] Route Kirim Komentar (Anti Spam + Cleaner)
+# [UPDATE] Route Kirim Komentar + Reply
 @app.route('/app/<int:app_id>/comment', methods=['POST'])
 def add_comment(app_id):
     app_obj = Application.query.get_or_404(app_id)
     content = request.form.get('content')
+    parent_id = request.form.get('parent_id') # Ambil ID Parent jika ada
+    
+    # Validasi Parent ID (Pastikan kosong string jadi None)
+    if parent_id == "": parent_id = None
     
     # Cek apakah user adalah Developer/Partner
     is_dev = 'user_id' in session
     
     if is_dev:
-        # Developer bebas spam, nama otomatis
-        # Ambil role untuk label yang tepat (Owner/Partner)
         role = session.get('role', 'partner')
         if role == 'owner':
             name = "Developer"
@@ -276,14 +277,12 @@ def add_comment(app_id):
             name = "Team Partner"
         is_developer = True
     else:
-        # User Biasa
         name = request.form.get('name')
         is_developer = False
         
-        # [ANTI SPAM 1] Cek Cookie Server-Side
+        # [ANTI SPAM]
         last_comment_time = request.cookies.get('last_comment_time')
         if last_comment_time:
-             # Hitung selisih waktu
             try:
                 last_time = datetime.fromtimestamp(float(last_comment_time))
                 if datetime.now() - last_time < timedelta(minutes=30):
@@ -292,20 +291,24 @@ def add_comment(app_id):
             except: pass
 
     if content:
-        new_comment = Comment(app_id=app_id, name=name, content=content, is_developer=is_developer)
+        new_comment = Comment(
+            app_id=app_id, 
+            name=name, 
+            content=content, 
+            is_developer=is_developer,
+            parent_id=parent_id # Masukkan parent_id
+        )
         db.session.add(new_comment)
         
-        # [AUTO CLEANER] Hapus komentar > 30 hari setiap kali ada komen baru
+        # [AUTO CLEANER]
         thirty_days_ago = get_wib_now() - timedelta(days=30)
         old_comments = Comment.query.filter(Comment.created_at < thirty_days_ago).delete()
         
         db.session.commit()
         flash('Komentar terkirim!', 'success')
     
-    # Buat Response untuk set Cookie (Khusus User Biasa)
     resp = make_response(redirect(url_for('detail', app_id=app_id)))
     if not is_dev:
-        # Set cookie expired 30 menit
         expire_date = datetime.now() + timedelta(minutes=30)
         resp.set_cookie('last_comment_time', str(datetime.now().timestamp()), expires=expire_date)
         
