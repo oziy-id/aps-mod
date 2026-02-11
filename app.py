@@ -242,7 +242,7 @@ def contact():
         email = request.form.get('email')
         message = request.form.get('message')
         if send_email(f"Pesan Baru dari {name}", app.config['MAIL_RECIPIENT'], 'email.html', name=name, user_email=email, message=message):
-            flash('Pesan berhasil dikirim!', 'success')
+            flash('Message successfully sent to developer!', 'success')
         else:
             flash('Gagal mengirim pesan.', 'error')
         return redirect(url_for('contact'))
