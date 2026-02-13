@@ -1,5 +1,6 @@
 import os
 import io
+import re  
 import functools
 import smtplib
 import random
@@ -23,23 +24,19 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'kunci-rahasia-default')
     BASE_DIR = os.path.abspath(os.path.dirname(__file__))
     
-    # Database Config
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
     if SQLALCHEMY_DATABASE_URI and SQLALCHEMY_DATABASE_URI.startswith("postgres://"):
         SQLALCHEMY_DATABASE_URI = SQLALCHEMY_DATABASE_URI.replace("postgres://", "postgresql://", 1)
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
-    # Upload Settings
     ALLOWED_EXTENSIONS = {'apk', 'xapk', 'zip'}
     
-    # Email Config
     MAIL_SERVER = 'smtp.gmail.com'
     MAIL_PORT = 587
     MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
     MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
     MAIL_RECIPIENT = os.environ.get('MAIL_RECIPIENT')
 
-    # Supabase Config
     SUPABASE_URL = os.environ.get("SUPABASE_URL")
     SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
     SUPABASE_BUCKET = "uploads" 
@@ -61,28 +58,38 @@ def allowed_file(filename):
 def allowed_media(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'webp', 'pdf'}
 
-# --- FUNGSI KOMPRES GAMBAR ---
+# --- FUNGSI PEMBERSIH NAMA FILE (SEO FRIENDLY) ---
+def sanitize_filename(title):
+    """Mengubah 'Capcut Pro v2' menjadi 'capcut_pro_v2'"""
+    clean_title = title.lower()
+    clean_title = re.sub(r'[^a-z0-9]+', '_', clean_title)
+    return clean_title.strip('_')
+
+# --- FUNGSI KOMPRES GAMBAR (SEMUA JADI WEBP) ---
 def compress_image(file_storage, is_icon=False):
     try:
         img = Image.open(file_storage)
         output = io.BytesIO()
+        
+        # Jaga-jaga kalau ada gambar PNG yang transparan agar tidak error
+        if not is_icon and img.mode in ("RGBA", "P"): 
+            img = img.convert("RGB")
+            
         if is_icon:
+            # KOMPRES ICON: Maksimal 512px
             img.thumbnail((512, 512)) 
             img.save(output, format='WEBP', quality=90)
-            new_filename = file_storage.filename.rsplit('.', 1)[0] + ".webp"
-            mimetype = 'image/webp'
         else:
-            if img.mode in ("RGBA", "P"): img = img.convert("RGB")
+            # KOMPRES SCREENSHOT: Maksimal HD 720p
             img.thumbnail((1280, 720)) 
-            img.save(output, format='JPEG', quality=80, optimize=True)
-            new_filename = file_storage.filename.rsplit('.', 1)[0] + ".jpg"
-            mimetype = 'image/jpeg'
+            img.save(output, format='WEBP', quality=85) # Ubah ke WEBP agar seragam!
+            
         output.seek(0)
-        return output, new_filename, mimetype
+        return output, 'image/webp' # Mimetype WEBP
     except Exception as e:
         print(f"Gagal kompres gambar: {e}")
         file_storage.seek(0)
-        return file_storage, file_storage.filename, getattr(file_storage, 'content_type', 'application/octet-stream')
+        return file_storage, getattr(file_storage, 'content_type', 'application/octet-stream')
 
 def upload_to_supabase(file, filename, content_type):
     try:
@@ -90,7 +97,7 @@ def upload_to_supabase(file, filename, content_type):
         res = supabase.storage.from_(app.config['SUPABASE_BUCKET']).upload(
             path=filename,
             file=file_content,
-            file_options={"content-type": content_type, "upsert": "true"}
+            file_options={"content-type": content_type, "upsert": "true"} # Upsert True = Otomatis Timpa File Lama!
         )
         return True
     except Exception as e:
@@ -164,7 +171,6 @@ class AppScreenshot(db.Model):
     image_path = db.Column(db.String(200), nullable=False)
     orientation = db.Column(db.String(20), default='landscape')
 
-# [UPDATE] Model Komentar dengan Parent ID (Reply System)
 class Comment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     app_id = db.Column(db.Integer, db.ForeignKey('application.id'), nullable=False)
@@ -172,7 +178,6 @@ class Comment(db.Model):
     content = db.Column(db.String(500), nullable=False)
     is_developer = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=get_wib_now)
-    # Kolom untuk Reply
     parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=True)
     replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic')
 
@@ -242,7 +247,7 @@ def contact():
         email = request.form.get('email')
         message = request.form.get('message')
         if send_email(f"Pesan Baru dari {name}", app.config['MAIL_RECIPIENT'], 'email.html', name=name, user_email=email, message=message):
-            flash('Message successfully sent to developer!', 'success')
+            flash('Pesan berhasil dikirim!', 'success')
         else:
             flash('Gagal mengirim pesan.', 'error')
         return redirect(url_for('contact'))
@@ -252,35 +257,25 @@ def contact():
 def detail(app_id):
     app = Application.query.get_or_404(app_id)
     is_pdf_icon = app.icon_path and app.icon_path.lower().endswith('.pdf')
-    # [UPDATE] Hanya ambil komentar INDUK (yang tidak punya parent)
     comments = Comment.query.filter_by(app_id=app_id, parent_id=None).order_by(Comment.created_at.desc()).all()
     return render_template('detail.html', app=app, is_pdf_icon=is_pdf_icon, comments=comments)
 
-# [UPDATE] Route Kirim Komentar + Reply
 @app.route('/app/<int:app_id>/comment', methods=['POST'])
 def add_comment(app_id):
     app_obj = Application.query.get_or_404(app_id)
     content = request.form.get('content')
-    parent_id = request.form.get('parent_id') # Ambil ID Parent jika ada
+    parent_id = request.form.get('parent_id') 
     
-    # Validasi Parent ID (Pastikan kosong string jadi None)
     if parent_id == "": parent_id = None
-    
-    # Cek apakah user adalah Developer/Partner
     is_dev = 'user_id' in session
     
     if is_dev:
         role = session.get('role', 'partner')
-        if role == 'owner':
-            name = "Developer"
-        else:
-            name = "Team Partner"
+        name = "Developer" if role == 'owner' else "Team Partner"
         is_developer = True
     else:
         name = request.form.get('name')
         is_developer = False
-        
-        # [ANTI SPAM]
         last_comment_time = request.cookies.get('last_comment_time')
         if last_comment_time:
             try:
@@ -292,18 +287,12 @@ def add_comment(app_id):
 
     if content:
         new_comment = Comment(
-            app_id=app_id, 
-            name=name, 
-            content=content, 
-            is_developer=is_developer,
-            parent_id=parent_id # Masukkan parent_id
+            app_id=app_id, name=name, content=content, 
+            is_developer=is_developer, parent_id=parent_id
         )
         db.session.add(new_comment)
-        
-        # [AUTO CLEANER]
         thirty_days_ago = get_wib_now() - timedelta(days=30)
         old_comments = Comment.query.filter(Comment.created_at < thirty_days_ago).delete()
-        
         db.session.commit()
         flash('Komentar terkirim!', 'success')
     
@@ -311,7 +300,6 @@ def add_comment(app_id):
     if not is_dev:
         expire_date = datetime.now() + timedelta(minutes=30)
         resp.set_cookie('last_comment_time', str(datetime.now().timestamp()), expires=expire_date)
-        
     return resp
 
 @app.route('/download/<int:app_id>')
@@ -423,6 +411,9 @@ def admin_dashboard():
         
         if not title_input: return redirect(request.url)
         
+        # --- BIKIN NAMA FILE SEO FRIENDLY ---
+        safe_title = sanitize_filename(title_input)
+        
         existing_app = Application.query.filter_by(title=title_input).first()
         app_obj = existing_app if existing_app else Application(title=title_input)
         
@@ -436,9 +427,10 @@ def admin_dashboard():
             app_obj.file_path = download_url
             app_obj.size = manual_size
             
+        # --- UPLOAD LOGO ---
         if icon_file and allowed_media(icon_file.filename):
-            compressed_file, new_name, new_mime = compress_image(icon_file, is_icon=True)
-            icon_filename = secure_filename(f"icon_{datetime.now().timestamp()}_{new_name}")
+            compressed_file, new_mime = compress_image(icon_file, is_icon=True)
+            icon_filename = f"{safe_title}.webp" 
             upload_to_supabase(compressed_file, icon_filename, new_mime) 
             app_obj.icon_path = icon_filename
             
@@ -450,12 +442,13 @@ def admin_dashboard():
         app_obj.created_at = get_wib_now()
         db.session.commit()
         
+        # --- UPLOAD SCREENSHOTS ---
         if screenshot_files and screenshot_files[0].filename != '':
             AppScreenshot.query.filter_by(app_id=app_obj.id).delete()
             for i, ss in enumerate(screenshot_files):
                 if ss and allowed_media(ss.filename):
-                    compressed_ss, ss_name, ss_mime = compress_image(ss, is_icon=False)
-                    final_ss_name = secure_filename(f"ss_{datetime.now().timestamp()}_{ss_name}")
+                    compressed_ss, ss_mime = compress_image(ss, is_icon=False)
+                    final_ss_name = f"{safe_title}{i+1}.webp"
                     upload_to_supabase(compressed_ss, final_ss_name, ss_mime)
                     new_ss = AppScreenshot(app_id=app_obj.id, image_path=final_ss_name, orientation=orientation_input)
                     db.session.add(new_ss)
